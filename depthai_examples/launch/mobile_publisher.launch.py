@@ -121,6 +121,26 @@ def generate_launch_description():
             ],
             output='screen',)
 
+    point_cloud_node = launch_ros.actions.ComposableNodeContainer(
+            name='container2',
+            namespace='',
+            package='rclcpp_components',
+            executable='component_container',
+            composable_node_descriptions=[
+                # Driver itself
+                launch_ros.descriptions.ComposableNode(
+                    package='depth_image_proc',
+                    plugin='depth_image_proc::PointCloudXyziNode',
+                    name='point_cloud_xyzi',
+
+                    remappings=[('depth/image_rect', '/stereo/converted_depth'),
+                                ('intensity/image_rect', '/right/image_rect'),
+                                ('intensity/camera_info', '/right/camera_info'),
+                                ('points', '/stereo/points')]
+                ),
+            ],
+            output='screen',)
+
     ld = LaunchDescription()
     ld.add_action(declare_tf_prefix_cmd)
     ld.add_action(declare_camera_model_cmd)
@@ -142,7 +162,7 @@ def generate_launch_description():
     ld.add_action(mobilenet_node)
 
     ld.add_action(metric_converter_node)
-    # ld.add_action(point_cloud_node)
+    ld.add_action(point_cloud_node)
     # ld.add_action(rviz_node)
     return ld
 
