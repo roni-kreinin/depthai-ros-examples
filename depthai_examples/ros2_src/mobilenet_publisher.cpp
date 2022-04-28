@@ -22,35 +22,35 @@ dai::Pipeline createPipeline(bool syncNN, std::string nnPath){
     auto detectionNetwork = pipeline.create<dai::node::MobileNetDetectionNetwork>();
     auto nnOut = pipeline.create<dai::node::XLinkOut>();
 
-    auto monoLeft    = pipeline.create<dai::node::MonoCamera>();
-    auto monoRight   = pipeline.create<dai::node::MonoCamera>();
-    auto stereo      = pipeline.create<dai::node::StereoDepth>();
-    auto xoutDepth   = pipeline.create<dai::node::XLinkOut>();
+    // auto monoLeft    = pipeline.create<dai::node::MonoCamera>();
+    // auto monoRight   = pipeline.create<dai::node::MonoCamera>();
+    // auto stereo      = pipeline.create<dai::node::StereoDepth>();
+    // auto xoutDepth   = pipeline.create<dai::node::XLinkOut>();
 
     xlinkOut->setStreamName("preview");
     nnOut->setStreamName("detections");
-    xoutDepth->setStreamName("depth");
+    // xoutDepth->setStreamName("depth");
 
-    dai::node::MonoCamera::Properties::SensorResolution monoResolution = dai::node::MonoCamera::Properties::SensorResolution::THE_400_P; 
+    // dai::node::MonoCamera::Properties::SensorResolution monoResolution = dai::node::MonoCamera::Properties::SensorResolution::THE_400_P; 
 
-    // MonoCamera
-    monoLeft->setResolution(monoResolution);
-    monoLeft->setBoardSocket(dai::CameraBoardSocket::LEFT);
-    monoRight->setResolution(monoResolution);
-    monoRight->setBoardSocket(dai::CameraBoardSocket::RIGHT);
+    // // MonoCamera
+    // monoLeft->setResolution(monoResolution);
+    // monoLeft->setBoardSocket(dai::CameraBoardSocket::LEFT);
+    // monoRight->setResolution(monoResolution);
+    // monoRight->setBoardSocket(dai::CameraBoardSocket::RIGHT);
 
-    // StereoDepth
-    stereo->initialConfig.setConfidenceThreshold(200);
-    stereo->setRectifyEdgeFillColor(0); // black, to better see the cutout
-    stereo->initialConfig.setLeftRightCheckThreshold(5);
-    stereo->setLeftRightCheck(true);
-    stereo->setExtendedDisparity(false);
-    stereo->setSubpixel(true);
+    // // StereoDepth
+    // stereo->initialConfig.setConfidenceThreshold(200);
+    // stereo->setRectifyEdgeFillColor(0); // black, to better see the cutout
+    // stereo->initialConfig.setLeftRightCheckThreshold(5);
+    // stereo->setLeftRightCheck(true);
+    // stereo->setExtendedDisparity(false);
+    // stereo->setSubpixel(true);
 
-    // // Link plugins CAM -> STEREO -> XLINK
-    monoLeft->out.link(stereo->left);
-    monoRight->out.link(stereo->right);
-    stereo->depth.link(xoutDepth->input);
+    // // // Link plugins CAM -> STEREO -> XLINK
+    // monoLeft->out.link(stereo->left);
+    // monoRight->out.link(stereo->right);
+    // stereo->depth.link(xoutDepth->input);
 
     colorCam->setPreviewSize(300, 300);
     colorCam->setResolution(dai::ColorCameraProperties::SensorResolution::THE_1080_P);
@@ -101,26 +101,26 @@ int main(int argc, char** argv){
     dai::Pipeline pipeline = createPipeline(syncNN, nnPath);
     dai::Device device(pipeline);
 
-    dai::rosBridge::ImageConverter depthConverter(tfPrefix + "_right_camera_optical_frame", true);
+    //dai::rosBridge::ImageConverter depthConverter(tfPrefix + "_right_camera_optical_frame", true);
     
     std::shared_ptr<dai::DataOutputQueue> previewQueue = device.getOutputQueue("preview", 30, false);
     std::shared_ptr<dai::DataOutputQueue> nNetDataQueue = device.getOutputQueue("detections", 30, false);
-    auto stereoQueue = device.getOutputQueue("depth", 30, false);
-    auto calibrationHandler = device.readCalibration();
-    auto stereoCameraInfo = depthConverter.calibrationToCameraInfo(calibrationHandler, dai::CameraBoardSocket::RIGHT, 640, 400);
+    //auto stereoQueue = device.getOutputQueue("depth", 30, false);
+    //auto calibrationHandler = device.readCalibration();
+    //auto stereoCameraInfo = depthConverter.calibrationToCameraInfo(calibrationHandler, dai::CameraBoardSocket::RIGHT, 640, 400);
     std::string color_uri = cameraParamUri + "/" + "color.yaml";
 
-    auto depthPublish = std::make_unique<dai::rosBridge::BridgePublisher<sensor_msgs::msg::Image, dai::ImgFrame>>(stereoQueue,
-                                                                                     node, 
-                                                                                     std::string("stereo/depth"),
-                                                                                     std::bind(&dai::rosBridge::ImageConverter::toRosMsg, 
-                                                                                     &depthConverter, // since the converter has the same frame name
-                                                                                                      // and image type is also same we can reuse it
-                                                                                     std::placeholders::_1, 
-                                                                                     std::placeholders::_2) , 
-                                                                                     30,
-                                                                                     stereoCameraInfo,
-                                                                                     "stereo");
+    // auto depthPublish = std::make_unique<dai::rosBridge::BridgePublisher<sensor_msgs::msg::Image, dai::ImgFrame>>(stereoQueue,
+    //                                                                                  node, 
+    //                                                                                  std::string("stereo/depth"),
+    //                                                                                  std::bind(&dai::rosBridge::ImageConverter::toRosMsg, 
+    //                                                                                  &depthConverter, // since the converter has the same frame name
+    //                                                                                                   // and image type is also same we can reuse it
+    //                                                                                  std::placeholders::_1, 
+    //                                                                                  std::placeholders::_2) , 
+    //                                                                                  30,
+    //                                                                                  stereoCameraInfo,
+    //                                                                                  "stereo");
     //TODO(sachin): Add option to use CameraInfo from EEPROM
     // dai::rosBridge::ImageConverter rgbConverter(tfPrefix + "_rgb_camera_optical_frame", false);
     // dai::rosBridge::BridgePublisher<sensor_msgs::msg::Image, dai::ImgFrame> rgbPublish(previewQueue,
@@ -147,7 +147,7 @@ int main(int argc, char** argv){
                                                                                                          30);
 
     detectionPublish.addPublisherCallback();
-    depthPublish->addPublisherCallback();
+    //depthPublish->addPublisherCallback();
     //rgbPublish.addPublisherCallback(); // addPublisherCallback works only when the dataqueue is non blocking.
 
     rclcpp::spin(node);
