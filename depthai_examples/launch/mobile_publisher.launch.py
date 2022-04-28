@@ -94,20 +94,6 @@ def generate_launch_description():
         'nn_path',
         default_value=nn_path,
         description='Path to the object detection blob needed for detection')
-    
-    urdf_launch = IncludeLaunchDescription(
-                            launch_description_sources.PythonLaunchDescriptionSource(
-                                    os.path.join(urdf_launch_dir, 'urdf_launch.py')),
-                            launch_arguments={'tf_prefix'   : tf_prefix,
-                                              'camera_model': camera_model,
-                                              'base_frame'  : base_frame,
-                                              'parent_frame': parent_frame,
-                                              'cam_pos_x'   : cam_pos_x,
-                                              'cam_pos_y'   : cam_pos_y,
-                                              'cam_pos_z'   : cam_pos_z,
-                                              'cam_roll'    : cam_roll,
-                                              'cam_pitch'   : cam_pitch,
-                                              'cam_yaw'     : cam_yaw}.items())
 
     mobilenet_node = launch_ros.actions.Node(
             package='depthai_examples', executable='mobilenet_node',
@@ -117,17 +103,31 @@ def generate_launch_description():
                         {'sync_nn': sync_nn},
                         {'nn_path': nn_path}])
 
-    rviz_node = launch_ros.actions.Node(
-            package='rviz2', executable='rviz2', output='screen',
-            arguments=['--display-config', default_rviz])
+    metric_converter_node = launch_ros.actions.ComposableNodeContainer(
+            name='container',
+            namespace='',
+            package='rclcpp_components',
+            executable='component_container',
+            composable_node_descriptions=[
+                # Driver itself
+                launch_ros.descriptions.ComposableNode(
+                    package='depth_image_proc',
+                    plugin='depth_image_proc::ConvertMetricNode',
+                    name='convert_metric_node',
+                    remappings=[('image_raw', '/stereo/depth'),
+                                ('camera_info', '/stereo/camera_info'),
+                                ('image', '/stereo/converted_depth')]
+                ),
+            ],
+            output='screen',)
 
     ld = LaunchDescription()
     ld.add_action(declare_tf_prefix_cmd)
     ld.add_action(declare_camera_model_cmd)
-    
+
     ld.add_action(declare_base_frame_cmd)
     ld.add_action(declare_parent_frame_cmd)
-    
+
     ld.add_action(declare_pos_x_cmd)
     ld.add_action(declare_pos_y_cmd)
     ld.add_action(declare_pos_z_cmd)
@@ -140,9 +140,8 @@ def generate_launch_description():
     ld.add_action(declare_nn_path_cmd)
 
     ld.add_action(mobilenet_node)
-    ld.add_action(urdf_launch)
 
-    # ld.add_action(metric_converter_node)
+    ld.add_action(metric_converter_node)
     # ld.add_action(point_cloud_node)
     # ld.add_action(rviz_node)
     return ld
