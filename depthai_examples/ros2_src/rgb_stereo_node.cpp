@@ -129,7 +129,7 @@ int main(int argc, char** argv){
     node->declare_parameter("subpixel", true);
     node->declare_parameter("confidence",  200);
     node->declare_parameter("LRchecktresh",  5);
-    node->declare_parameter("monoResolution",  "720p");
+    node->declare_parameter("monoResolution",  "400p");
     node->declare_parameter("colorResolution", "1080p");
     node->declare_parameter("useVideo", true);
     node->declare_parameter("usePreview", false);
