@@ -7,10 +7,14 @@
 #include <sensor_msgs/msg/image.hpp>
 #include <camera_info_manager/camera_info_manager.hpp>
 #include <vision_msgs/msg/detection2_d_array.hpp>
+#include <stereo_msgs/msg/disparity_image.hpp>
+#include <depthai_ros_msgs/msg/spatial_detection_array.hpp>
 
 #include <depthai_bridge/BridgePublisher.hpp>
 #include <depthai_bridge/ImageConverter.hpp>
 #include <depthai_bridge/ImgDetectionConverter.hpp>
+#include <depthai_bridge/SpatialDetectionConverter.hpp>
+#include <depthai_bridge/DisparityConverter.hpp>
 
 // Inludes common necessary includes for development using depthai library
 #include "depthai/depthai.hpp"
@@ -19,28 +23,68 @@ dai::Pipeline createPipeline(bool syncNN, std::string nnPath){
     dai::Pipeline pipeline;
     auto colorCam = pipeline.create<dai::node::ColorCamera>();
     auto xlinkOut = pipeline.create<dai::node::XLinkOut>();
-    auto detectionNetwork = pipeline.create<dai::node::MobileNetDetectionNetwork>();
+    auto spatialDetectionNetwork = pipeline.create<dai::node::MobileNetSpatialDetectionNetwork>();
     auto nnOut = pipeline.create<dai::node::XLinkOut>();
+
+    dai::node::MonoCamera::Properties::SensorResolution monoResolution; 
+    auto monoLeft    = pipeline.create<dai::node::MonoCamera>();
+    auto monoRight   = pipeline.create<dai::node::MonoCamera>();
+    auto stereo      = pipeline.create<dai::node::StereoDepth>();
+    auto xoutBoundingBoxDepthMapping = pipeline.create<dai::node::XLinkOut>();
+    auto xoutDepth = pipeline.create<dai::node::XLinkOut>();
 
     xlinkOut->setStreamName("preview");
     nnOut->setStreamName("detections");
+    xoutBoundingBoxDepthMapping->setStreamName("boundingBoxDepthMapping");
+    xoutDepth->setStreamName("depth");
 
     colorCam->setPreviewSize(300, 300);
     colorCam->setResolution(dai::ColorCameraProperties::SensorResolution::THE_1080_P);
     colorCam->setInterleaved(false);
     colorCam->setColorOrder(dai::ColorCameraProperties::ColorOrder::BGR);
-    colorCam->setFps(40);
+    colorCam->setFps(15);
+
+    monoResolution = dai::node::MonoCamera::Properties::SensorResolution::THE_400_P; 
+
+    // MonoCamera
+    monoLeft->setResolution(monoResolution);
+    monoLeft->setBoardSocket(dai::CameraBoardSocket::LEFT);
+    monoRight->setResolution(monoResolution);
+    monoRight->setBoardSocket(dai::CameraBoardSocket::RIGHT);
+
+    // StereoDepth
+    stereo->initialConfig.setConfidenceThreshold(200);
+    stereo->setRectifyEdgeFillColor(0); // black, to better see the cutout
+    stereo->initialConfig.setLeftRightCheckThreshold(5);
+    stereo->setLeftRightCheck(true);
+    stereo->setExtendedDisparity(false);
+    stereo->setSubpixel(false);
+
+    spatialDetectionNetwork->setBlobPath(nnPath);
+    spatialDetectionNetwork->setConfidenceThreshold(0.5f);
+    spatialDetectionNetwork->input.setBlocking(false);
+    spatialDetectionNetwork->setBoundingBoxScaleFactor(0.5);
+    spatialDetectionNetwork->setDepthLowerThreshold(100);
+    spatialDetectionNetwork->setDepthUpperThreshold(5000);
+
+    // Link plugins CAM -> STEREO -> XLINK
+    monoLeft->out.link(stereo->left);
+    monoRight->out.link(stereo->right);
 
     // testing MobileNet DetectionNetwork
-    detectionNetwork->setConfidenceThreshold(0.5f);
-    detectionNetwork->setBlobPath(nnPath);
+    // detectionNetwork->setConfidenceThreshold(0.5f);
+    // detectionNetwork->setBlobPath(nnPath);
 
     // Link plugins CAM -> NN -> XLINK
-    colorCam->preview.link(detectionNetwork->input);
-    if(syncNN) detectionNetwork->passthrough.link(xlinkOut->input);
+    colorCam->preview.link(spatialDetectionNetwork->input);
+    if(syncNN) spatialDetectionNetwork->passthrough.link(xlinkOut->input);
     else colorCam->preview.link(xlinkOut->input);
 
-    detectionNetwork->out.link(nnOut->input);
+    spatialDetectionNetwork->out.link(nnOut->input);
+    spatialDetectionNetwork->boundingBoxMapping.link(xoutBoundingBoxDepthMapping->input);
+    stereo->depth.link(spatialDetectionNetwork->inputDepth);
+    spatialDetectionNetwork->passthroughDepth.link(xoutDepth->input);
+
     return pipeline;
 }
 
@@ -76,6 +120,8 @@ int main(int argc, char** argv){
     
     std::shared_ptr<dai::DataOutputQueue> previewQueue = device.getOutputQueue("preview", 30, false);
     std::shared_ptr<dai::DataOutputQueue> nNetDataQueue = device.getOutputQueue("detections", 30, false);
+    std::shared_ptr<dai::DataOutputQueue> depthQueue = device.getOutputQueue("depth", 30, false);
+    std::shared_ptr<dai::DataOutputQueue> bboxQueue = device.getOutputQueue("boundingBoxDepthMapping", 30, false);
 
     std::string color_uri = cameraParamUri + "/" + "color.yaml";
 
@@ -89,25 +135,26 @@ int main(int argc, char** argv){
                                                                                                    // and image type is also same we can reuse it
                                                                                    std::placeholders::_1, 
                                                                                    std::placeholders::_2) , 
-                                                                                   30,
+                                                                                   15,
                                                                                    color_uri,
                                                                                    "color");
 
 
-    dai::rosBridge::ImgDetectionConverter detConverter(tfPrefix + "_rgb_camera_optical_frame", 300, 300, false);
-    dai::rosBridge::BridgePublisher<vision_msgs::msg::Detection2DArray, dai::ImgDetections> detectionPublish(nNetDataQueue,
+    dai::rosBridge::SpatialDetectionConverter detConverter(tfPrefix + "_rgb_camera_optical_frame", 300, 300, false);
+    dai::rosBridge::BridgePublisher<depthai_ros_msgs::msg::SpatialDetectionArray, dai::SpatialImgDetections> detectionPublish(nNetDataQueue,
                                                                                                          node, 
                                                                                                          std::string("color/mobilenet_detections"),
-                                                                                                         std::bind(&dai::rosBridge::ImgDetectionConverter::toRosMsg, 
+                                                                                                         std::bind(&dai::rosBridge::SpatialDetectionConverter::toRosMsg, 
                                                                                                          &detConverter,
                                                                                                          std::placeholders::_1, 
                                                                                                          std::placeholders::_2), 
-                                                                                                         30);
+                                                                                                         15);
 
     detectionPublish.addPublisherCallback();
     rgbPublish.addPublisherCallback(); // addPublisherCallback works only when the dataqueue is non blocking.
 
     rclcpp::spin(node);
+    std::cout << "Main sub count" << std::endl;
 
     return 0;
 }
